@@ -32,7 +32,6 @@
     --cells:#d4594a;
     --cells-deep:#b8493c;
     --line:#ece2dd;
-    --danger:#d4594a;
     --radius:14px;
     --shadow:0 2px 14px rgba(180,80,60,.08);
     --shadow-lg:0 8px 30px rgba(180,80,60,.12);
@@ -77,12 +76,12 @@
     background:linear-gradient(160deg,#281613 0%,#3a1f1a 100%);
     display:flex;align-items:center;justify-content:center;
     overflow:hidden;
-    touch-action:pan-x pan-y;
+    touch-action:none;
   }
   .stage canvas{
     touch-action:none;
-    max-width:100%;max-height:100%;
     display:block;
+    position:relative;
   }
   .stage .empty-hint{
     color:#c9a8a2;text-align:center;padding:clamp(16px,4vw,32px);font-size:clamp(12px,2.2vw,14px);line-height:2.2;
@@ -271,7 +270,7 @@
 
     <div class="btn-row">
       <button class="primary" id="btnPick">انتخاب / گرفتن عکس</button>
-      <button class="ghost" id="btnSnap" disabled>تشخیص خودکار مرز</button>
+      <button class="ghost" id="btnSnap" disabled>تشخیص خودکار تیوب</button>
       <button class="ghost" id="btnReset" disabled>بازنشانی نقاط</button>
     </div>
     <div class="btn-row" style="margin-top:8px;">
@@ -304,8 +303,8 @@
     <div style="font-size:clamp(11px,2vw,13px);line-height:2.2;color:var(--ink);">
       <p><b>1. عکس بگیرید یا انتخاب کنید</b><br>
       دکمه "انتخاب / گرفتن عکس" را بزنید. تیوب سانتریفیوژشده روی سطح ساده با نور یکنواخت باشد.</p>
-      <p><b>2. تشخیص خودکار (جدید)</b><br>
-      پس از بارگذاری عکس، نرم‌افزار به صورت خودکار تیوب را شناسایی کرده و سه نقطه را تعیین می‌کند و روی تیوب زوم می‌کند. در صورت نیاز نقاط را با انگشت اصلاح کنید.</p>
+      <p><b>2. تشخیص خودکار</b><br>
+      دکمه "تشخیص خودکار تیوب" را بزنید. نرم‌افزار تیوب را شناسایی کرده، سه نقطه را تعیین می‌کند و روی تیوب زوم می‌کند. در صورت نیاز نقاط را با انگشت اصلاح کنید.</p>
       <p><b>3. سه نقطه بگذارید</b><br>
       اگر تشخیص خودکار دقیق نبود، سه نقطه را به ترتیب روی تصویر تیوب ضربه بزنید:<br>
       <span style="color:#f0c75e;font-weight:700;">نقطه 1 (طلایی)</span> &mdash; بالای ستون پلاسما<br>
@@ -314,7 +313,7 @@
       <p><b>4. زوم کنید</b><br>
       برای دقت بیشتر، با دو انگشت روی تصویر زوم کنید یا در دسکتاپ از چرخ موس استفاده کنید. برای جابه‌جایی در حالت زوم، با دو انگشت بکشید.</p>
       <p><b>5. اصلاح کنید</b><br>
-      نقطه‌ها را با انگشت بکشید تا جای دقیق بنشینند. دکمه "تشخیص خودکار مرز" نقطه 2 را به صورت هوشمند تنظیم می‌کند.</p>
+      نقطه‌ها را با انگشت بکشید تا جای دقیق بنشینند.</p>
       <p><b>6. ذخیره کنید</b><br>
       برای ثبت در تاریخچه دکمه "ذخیره در تاریخچه" را بزنید.</p>
       <p><b>7. iOS — افزودن به هوم اسکرین</b><br>
@@ -385,7 +384,6 @@
   var btnZoomReset = document.getElementById('btnZoomReset');
   var btnSave = document.getElementById('btnSave');
   var btnDownload = document.getElementById('btnDownload');
-  var downloadAppLink = document.getElementById('downloadAppLink');
   var btnHistory = document.getElementById('btnHistory');
   var btnCloseHistory = document.getElementById('btnCloseHistory');
   var btnHelp = document.getElementById('btnHelp');
@@ -401,16 +399,18 @@
 
   var img = null;
   var imgW = 0, imgH = 0;
-  var scale = 1;
   var zoom = 1;
   var offsetX = 0, offsetY = 0;
   var points = [];
   var draggingIndex = -1;
   var lastHct = null;
+
+  // pinch state
   var isPinching = false;
   var pinchStartDist = 0, pinchStartZoom = 1;
-  var pinchCenterX = 0, pinchCenterY = 0;
-  var panStartOffX = 0, panStartOffY = 0;
+  var pinchStartOffX = 0, pinchStartOffY = 0;
+  var pinchCenterImgX = 0, pinchCenterImgY = 0;
+  var pinchCenterScrX = 0, pinchCenterScrY = 0;
 
   function showToast(msg, dur){
     toastEl.textContent = msg;
@@ -419,13 +419,19 @@
     window._toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, dur||1800);
   }
 
+  // *** NEW CLEAN COORD SYSTEM ***
+  // Canvas = stage dimensions. zoom=1 = full image visible (fit to stage).
+  // offsetX/Y = pan in image-pixel coords. Image center at canvas center when offset=0.
+  // draw transform: canvas-center → zoom → offset → fitScale
+  //   screenX = (imgX * fs - drawW/2 + offsetX * fs) * zoom + canvasW/2
+  //            = (imgX - imgW/2 + offsetX) * fs * zoom + canvasW/2
+
   function fitCanvasToStage(){
     if (!img) return;
-    var maxW = stage.clientWidth;
-    var maxH = stage.clientHeight;
-    scale = Math.min(maxW / imgW, maxH / imgH);
-    canvas.width = Math.round(imgW * scale * zoom);
-    canvas.height = Math.round(imgH * scale * zoom);
+    canvas.width = stage.clientWidth;
+    canvas.height = stage.clientHeight;
+    canvas.style.width = canvas.width + 'px';
+    canvas.style.height = canvas.height + 'px';
   }
 
   function resetZoom(){
@@ -433,45 +439,89 @@
     zoomIndicator.classList.remove('show');
   }
 
+  function fitScale(){
+    return Math.min(canvas.width / imgW, canvas.height / imgH);
+  }
+
+  // Canvas-buffer coords → image coords
+  function scrToImg(bufX, bufY){
+    var fs = fitScale();
+    var cx = bufX - canvas.width / 2;
+    var cy = bufY - canvas.height / 2;
+    // screenX = (imgX - imgW/2 + offsetX) * fs * zoom + canvasW/2
+    // imgX = cx / (fs * zoom) + imgW/2 - offsetX
+    return {
+      x: cx / (fs * zoom) + imgW / 2 - offsetX,
+      y: cy / (fs * zoom) + imgH / 2 - offsetY
+    };
+  }
+
+  // Screen CSS coords → image coords
+  function screenToImage(sx, sy){
+    var rect = canvas.getBoundingClientRect();
+    var ratioX = canvas.width / rect.width;
+    var ratioY = canvas.height / rect.height;
+    return scrToImg((sx - rect.left) * ratioX, (sy - rect.top) * ratioY);
+  }
+
+  // Image coords → canvas-buffer coords
+  function imgToScr(imgX, imgY){
+    var fs = fitScale();
+    return {
+      x: (imgX - imgW / 2 + offsetX) * fs * zoom + canvas.width / 2,
+      y: (imgY - imgH / 2 + offsetY) * fs * zoom + canvas.height / 2
+    };
+  }
+
   function draw(){
     if (!img) return;
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    var fs = fitScale();
+    var cw = canvas.width, ch = canvas.height;
+    var drawW = imgW * fs, drawH = imgH * fs;
+
+    ctx.clearRect(0, 0, cw, ch);
     ctx.save();
-    ctx.scale(scale * zoom, scale * zoom);
-    ctx.translate(-offsetX, -offsetY);
-    var drawX = (stage.clientWidth / (scale * zoom) - imgW) / 2;
-    var drawY = (stage.clientHeight / (scale * zoom) - imgH) / 2;
-    ctx.drawImage(img, drawX, drawY, imgW, imgH);
-    if (points.length >= 1){
-      var labels = ['1','2','3'];
-      var colors = ['#f0c75e', '#d4594a', '#b8493c'];
-      if (points[0] && points[2]){
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-        ctx.lineWidth = Math.max(2, imgW*0.0025);
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        ctx.lineTo(points[2].x, points[2].y);
-        ctx.stroke();
-        ctx.restore();
-      }
-      points.forEach(function(p, i){
-        var r = Math.max(10, imgW*0.014);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-        ctx.fillStyle = colors[i];
-        ctx.fill();
-        ctx.lineWidth = Math.max(2.5, imgW*0.002);
-        ctx.strokeStyle = '#fff';
-        ctx.stroke();
-        ctx.font = 'bold ' + Math.max(16, imgW*0.022) + 'px Vazirmatn, sans-serif';
-        ctx.fillStyle = '#fff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labels[i], p.x, p.y);
-      });
-    }
+    // Transform: canvas-center → zoom → offset → draw image centered in scaled space
+    ctx.translate(cw / 2, ch / 2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-drawW / 2 + offsetX * fs, -drawH / 2 + offsetY * fs);
+    ctx.drawImage(img, 0, 0, imgW, imgH, 0, 0, drawW, drawH);
     ctx.restore();
+
+    // Points/lines in SCREEN space (constant visual size regardless of zoom)
+    if (points.length < 1) return;
+    var scrPts = points.map(function(p){ return imgToScr(p.x, p.y); });
+
+    // Line between point 1 and 3
+    if (scrPts[0] && scrPts[2]){
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = Math.max(2, cw * 0.005);
+      ctx.beginPath();
+      ctx.moveTo(scrPts[0].x, scrPts[0].y);
+      ctx.lineTo(scrPts[2].x, scrPts[2].y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    var labels = ['1','2','3'];
+    var colors = ['#f0c75e', '#d4594a', '#b8493c'];
+    scrPts.forEach(function(sp, i){
+      var r = Math.max(12, cw * 0.025);
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = colors[i];
+      ctx.fill();
+      ctx.lineWidth = Math.max(2.5, cw * 0.004);
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+      var fontSize = Math.max(14, cw * 0.035);
+      ctx.font = 'bold ' + fontSize + 'px Vazirmatn, sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labels[i], sp.x, sp.y);
+    });
   }
 
   function updateSteps(){
@@ -484,7 +534,7 @@
 
   function updateButtons(){
     var haveAll = points.length === 3;
-    btnSnap.disabled = points.length === 0;
+    btnSnap.disabled = !img;
     btnReset.disabled = !img;
     btnSave.disabled = !haveAll;
     btnDownload.disabled = !haveAll;
@@ -506,26 +556,14 @@
     window._zoomTimer = setTimeout(function(){ zoomIndicator.classList.remove('show'); }, 1500);
   }
 
-  function canvasCoordFromEvent(e){
-    var rect = canvas.getBoundingClientRect();
-    var clientX = (e.touches&&e.touches[0]) ? e.touches[0].clientX : e.clientX;
-    var clientY = (e.touches&&e.touches[0]) ? e.touches[0].clientY : e.clientY;
-    var rawX = (clientX - rect.left) * (canvas.width / rect.width);
-    var rawY = (clientY - rect.top) * (canvas.height / rect.height);
-    var x = rawX / (scale * zoom) + offsetX - (stage.clientWidth / (scale * zoom) - imgW) / 2;
-    var y = rawY / (scale * zoom) + offsetY - (stage.clientHeight / (scale * zoom) - imgH) / 2;
-    return {x:x, y:y};
-  }
-
-  function nearestPointIndex(pt, thresholdPx){
-    var best = -1, bestD = Infinity;
-    var thresh = thresholdPx / (scale * zoom);
+  function nearestPointIndex(pt){
+    var thresh = imgW * 0.03;
+    var best = -1, bestD = thresh + 1;
     points.forEach(function(p, i){
-      var d = Math.hypot(p.x-pt.x, p.y-pt.y);
+      var d = Math.hypot(p.x - pt.x, p.y - pt.y);
       if (d < bestD){ bestD = d; best = i; }
     });
-    if (bestD <= thresh) return best;
-    return -1;
+    return (bestD <= thresh) ? best : -1;
   }
 
   function computeHct(){
@@ -559,7 +597,6 @@
   // === AUTO DETECT TUBE & POINTS ===
   function autoDetectPoints(){
     if (!img) return false;
-    // Get image data into a temp canvas (avoid ctx transform)
     var tc = document.createElement('canvas');
     tc.width = imgW; tc.height = imgH;
     var tctx = tc.getContext('2d');
@@ -568,127 +605,80 @@
     var d = idata.data;
     var w = imgW, h = imgH;
 
-    // Find tube center x by analyzing lower portion of image for red stripe
     var scanTop = Math.round(h * 0.4);
     var scanBot = Math.round(h * 0.85);
-    // Accumulate redness per column
     var colRedness = new Float32Array(w);
     var colCount = new Float32Array(w);
     for (var y = scanTop; y < scanBot; y++){
       for (var x = 0; x < w; x++){
         var idx = (y * w + x) * 4;
         var r = d[idx], g = d[idx+1], b = d[idx+2];
-        // Redness score: high red, low green+blue
         var red = Math.max(0, r - (g+b)/2);
         colRedness[x] += red;
         colCount[x]++;
       }
     }
-    // Average redness per column
     var avgRed = [];
     for (x = 0; x < w; x++){
       avgRed[x] = colCount[x] > 0 ? colRedness[x]/colCount[x] : 0;
     }
-    // Find column with peak redness
     var peakX = 0, peakVal = 0;
     for (x = 0; x < w; x++){
       if (avgRed[x] > peakVal){ peakVal = avgRed[x]; peakX = x; }
     }
-    if (peakVal < 5) return false; // No red detected
+    if (peakVal < 5) return false;
 
-    // Find tube left/right edges (where redness drops)
     var minRed = peakVal * 0.25;
     var left = peakX;
     while (left > 0 && avgRed[left] > minRed) left--;
     var right = peakX;
     while (right < w-1 && avgRed[right] > minRed) right++;
-    var tubeW = right - left;
-    if (tubeW < 4 || tubeW > w*0.3) return false; // implausible tube width
+    if (right - left < 4 || right - left > w*0.3) return false;
 
-    // Find tube x-range edges more precisely using gradient
-    var edgeThreshold = 30;
-    var grad;
-    // Scan outward from peakX to find sharp luminosity drop
-    var tubeL = peakX, tubeR = peakX;
-    for (x = peakX; x >= Math.max(0, peakX-Math.round(w*0.15)); x--){
-      if (x < 1) break;
-      grad = Math.abs(avgRed[x] - avgRed[x-1]);
-      if (grad > peakVal*0.3 && avgRed[x] < peakVal*0.4){ tubeL = x; break; }
-      tubeL = x;
-    }
-    for (x = peakX; x <= Math.min(w-1, peakX+Math.round(w*0.15)); x++){
-      if (x >= w-1) break;
-      grad = Math.abs(avgRed[x] - avgRed[x+1]);
-      if (grad > peakVal*0.3 && avgRed[x] < peakVal*0.4){ tubeR = x; break; }
-      tubeR = x;
-    }
+    var cx = Math.round((left + right) / 2);
+    var halfW = Math.max(3, Math.round((right-left)*0.6));
+    var sampleL = Math.max(0, cx - halfW);
+    var sampleR = Math.min(w-1, cx + halfW);
 
-    var cx = Math.round((tubeL + tubeR) / 2);
-    var halfW = Math.max(3, Math.round((tubeR-tubeL)*0.6));
-
-    // Scan vertically along tube center (averaged over tube width) to find layers
-    var windowW = Math.max(3, halfW);
-    var sampleL = Math.max(0, cx - windowW);
-    var sampleR = Math.min(w-1, cx + windowW);
-
-    // For each y, compute average RGB in tube window
-    function columnAvg(y){
+    function columnAvg(yr){
       var tr=0,tg=0,tb=0,c=0;
       for (var sx = sampleL; sx <= sampleR; sx++){
-        var idx = (y * w + sx) * 4;
+        var idx = (yr * w + sx) * 4;
         tr += d[idx]; tg += d[idx+1]; tb += d[idx+2]; c++;
       }
       return {r:tr/c, g:tg/c, b:tb/c};
     }
 
-    // Scan from bottom up, detect transitions
     var p1=null, p2=null, p3=null;
-    var state = 'bg'; // scanning from bottom: bg -> red -> buffy/plasma -> plasma -> empty
+    var state = 'bg';
     var prevColor = null;
 
     for (var sy = h-1; sy >= 0; sy--){
       var c = columnAvg(sy);
-      var lum = 0.299*c.r + 0.587*c.g + 0.114*c.b;
-      var redExcess = c.r - Math.max(c.g, c.b);
-      var isRed = redExcess > 12 && c.r > 60;
-      var isBright = lum > 180;
-      var isPlasma = (c.g > c.b && c.g > c.r*0.7 && !isRed) || (c.r > 30 && c.g > 30 && c.b < c.g && c.r < c.g*1.4 && !isRed);
+      var isRed = (c.r - Math.max(c.g, c.b) > 12) && c.r > 60;
 
       if (state === 'bg'){
         if (isRed || (c.r > 50 && c.g < c.r*0.9)){
-          p3 = {x:cx, y:sy};
-          state = 'red';
+          p3 = {x:cx, y:sy}; state = 'red';
         }
       } else if (state === 'red'){
-        // Transition from red to non-red = buffy coat / plasma boundary
         if (!isRed && prevColor && prevColor.r > 50){
-          p2 = {x:cx, y:sy};
-          state = 'plasma';
+          p2 = {x:cx, y:sy}; state = 'plasma';
         }
       } else if (state === 'plasma'){
-        // Transition from non-red content to bright/empty = top of plasma
-        if (isBright && c.r < 50 && c.g < 50){
-          p1 = {x:cx, y:sy};
-          break;
-        }
-        // Also detect if content fades to nothing (very low color saturation)
         var maxC = Math.max(c.r, c.g, c.b);
         var minC = Math.min(c.r, c.g, c.b);
-        if (maxC < 15 || (maxC > 220 && maxC - minC < 10)){
-          p1 = {x:cx, y:sy};
-          break;
+        if ((maxC > 220 && maxC - minC < 10) || maxC < 15){
+          p1 = {x:cx, y:sy}; break;
         }
       }
       prevColor = c;
     }
-
-    // If plasma top not found, use top of scan
-    if (!p1 && p2){ p1 = {x:cx, y:Math.round(h*0.2)}; }
-    if (!p3 && p2){ p3 = {x:cx, y:Math.round(h*0.85)}; }
-    if (!p2 && p3 && p1){ p2 = {x:cx, y:Math.round((p1.y+p3.y)*0.6)}; }
+    if (!p1 && p2) p1 = {x:cx, y:Math.round(h*0.2)};
+    if (!p3 && p2) p3 = {x:cx, y:Math.round(h*0.85)};
+    if (!p2 && p3 && p1) p2 = {x:cx, y:Math.round((p1.y+p3.y)*0.6)};
 
     if (p1 && p2 && p3){
-      // Ensure order: p1 top, p2 middle, p3 bottom
       if (p1.y > p2.y){ var t=p1; p1=p2; p2=t; }
       if (p2.y > p3.y){ var t=p2; p2=p3; p3=t; }
       if (p1.y > p2.y){ var t=p1; p1=p2; p2=t; }
@@ -700,7 +690,6 @@
 
   function autoZoomOnTube(){
     if (!img || points.length !== 3) return;
-    // Find bounding box of points
     var minX = imgW, maxX = 0, minY = imgH, maxY = 0;
     points.forEach(function(p){
       if (p.x < minX) minX = p.x;
@@ -708,7 +697,6 @@
       if (p.y < minY) minY = p.y;
       if (p.y > maxY) maxY = p.y;
     });
-    // Expand box for context
     var padX = (maxX - minX) * 0.3;
     var padY = (maxY - minY) * 0.15;
     minX = Math.max(0, minX - padX);
@@ -718,27 +706,19 @@
     var bw = maxX - minX, bh = maxY - minY;
     if (bw < 10 || bh < 10) return;
 
-    // Calculate zoom to fit tube with some margin
-    // We want the tube to take up ~70% of stage height
-    var rawH = stage.clientHeight;
-    var rawW = stage.clientWidth;
-    var zoomX = (rawW * 0.8) / (bw * scale);
-    var zoomY = (rawH * 0.75) / (bh * scale);
+    var cw = canvas.width, ch = canvas.height;
+    var fs = fitScale();
+    var zoomX = (cw * 0.8) / (bw * fs);
+    var zoomY = (ch * 0.75) / (bh * fs);
     var target = Math.min(zoomX, zoomY);
-    target = Math.max(1.5, Math.min(8, target));
+    target = Math.max(1.5, Math.min(10, target));
 
-    // Apply zoom and offset to center on tube
     zoom = target;
-    var tubeCenterX = (minX + maxX) / 2;
-    var tubeCenterY = (minY + maxY) / 2;
-    var stageCenterX = stage.clientWidth / 2;
-    var stageCenterY = stage.clientHeight / 2;
-    offsetX = tubeCenterX - stageCenterX / (scale * zoom) + (imgW / 2);
-    offsetY = tubeCenterY - stageCenterY / (scale * zoom) + (imgH / 2);
-    offsetX = Math.max(0, offsetX);
-    offsetY = Math.max(0, offsetY);
-
-    fitCanvasToStage();
+    var tubeCx = (minX + maxX) / 2;
+    var tubeCy = (minY + maxY) / 2;
+    // tubeCx at canvas center → (tubeCx - imgW/2 + offsetX) = 0 → offsetX = imgW/2 - tubeCx
+    offsetX = imgW / 2 - tubeCx;
+    offsetY = imgH / 2 - tubeCy;
     draw();
     showZoomIndicator();
     updateZoomButtons();
@@ -747,53 +727,39 @@
   function runAutoDetect(){
     if (!img) return;
     detectSpinner.classList.add('show');
-    // Run detection asynchronously to let spinner render
     setTimeout(function(){
       var ok = autoDetectPoints();
       detectSpinner.classList.remove('show');
       if (ok){
-        updateSteps();
-        updateButtons();
-        renderResult();
+        updateSteps(); updateButtons(); renderResult();
         autoZoomOnTube();
-        showToast('تیوب و نقاط به صورت خودکار تشخیص داده شد', 2200);
+        showToast('تیوب و نقاط تشخیص داده شد', 2200);
       } else {
         showToast('تشخیص خودکار ممکن نشد؛ نقاط را دستی قرار دهید', 2500);
       }
     }, 100);
   }
 
-  // --- image loading with auto-detect ---
   function loadImageFile(file){
     var url = URL.createObjectURL(file);
     var im = new Image();
     im.onload = function(){
-      img = im;
-      imgW = im.naturalWidth;
-      imgH = im.naturalHeight;
-      points = [];
-      resetZoom();
-      fitCanvasToStage();
-      draw();
-      emptyHint.style.display = 'none';
-      canvas.style.display = 'block';
-      updateButtons();
-      updateSteps();
-      renderResult();
+      img = im; imgW = im.naturalWidth; imgH = im.naturalHeight;
+      points = []; resetZoom();
+      fitCanvasToStage(); draw();
+      emptyHint.style.display = 'none'; canvas.style.display = 'block';
+      updateButtons(); updateSteps(); renderResult();
       URL.revokeObjectURL(url);
-      // Auto-detect points
-      runAutoDetect();
     };
     im.src = url;
   }
 
-  // --- pointer interactions ---
+  // --- pointer events (point placement & drag) ---
   canvas.addEventListener('pointerdown', function(e){
     if (!img || isPinching) return;
     e.preventDefault();
-    var pt = canvasCoordFromEvent(e);
-    var thresh = imgW * 0.035;
-    var idx = nearestPointIndex(pt, thresh);
+    var pt = screenToImage(e.clientX, e.clientY);
+    var idx = nearestPointIndex(pt);
     if (idx !== -1){
       draggingIndex = idx;
       canvas.setPointerCapture(e.pointerId);
@@ -801,98 +767,112 @@
     }
     if (points.length < 3){
       points.push(pt);
-      draw();
-      updateSteps();
-      updateButtons();
-      renderResult();
+      draw(); updateSteps(); updateButtons(); renderResult();
     }
   });
   canvas.addEventListener('pointermove', function(e){
     if (draggingIndex === -1 || isPinching) return;
-    var pt = canvasCoordFromEvent(e);
+    var pt = screenToImage(e.clientX, e.clientY);
     pt.x = Math.max(0, Math.min(imgW, pt.x));
     pt.y = Math.max(0, Math.min(imgH, pt.y));
     points[draggingIndex] = pt;
-    draw();
-    renderResult();
+    draw(); renderResult();
   });
   function endDrag(){ draggingIndex = -1; }
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('pointerleave', endDrag);
 
-  // --- touch pinch zoom + two-finger pan ---
+  // --- pinch zoom + pan ---
   canvas.addEventListener('touchstart', function(e){
     if (!img) return;
     if (e.touches.length === 2){
       e.preventDefault();
       isPinching = true;
       var t = e.touches;
-      var dx = t[0].clientX - t[1].clientX;
-      var dy = t[0].clientY - t[1].clientY;
-      pinchStartDist = Math.hypot(dx, dy);
+      pinchStartDist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
       pinchStartZoom = zoom;
-      pinchCenterX = (t[0].clientX + t[1].clientX) / 2;
-      pinchCenterY = (t[0].clientY + t[1].clientY) / 2;
-      panStartOffX = offsetX; panStartOffY = offsetY;
+      pinchStartOffX = offsetX; pinchStartOffY = offsetY;
+      var cScrX = (t[0].clientX + t[1].clientX) / 2;
+      var cScrY = (t[0].clientY + t[1].clientY) / 2;
+      pinchCenterScrX = cScrX; pinchCenterScrY = cScrY;
+      var pt = screenToImage(cScrX, cScrY);
+      pinchCenterImgX = pt.x; pinchCenterImgY = pt.y;
     }
   }, {passive: false});
+
   canvas.addEventListener('touchmove', function(e){
-    if (!img || !isPinching || e.touches.length !== 2) return;
+    if (!isPinching || e.touches.length !== 2) return;
     e.preventDefault();
     var t = e.touches;
-    var dx = t[0].clientX - t[1].clientX;
-    var dy = t[0].clientY - t[1].clientY;
-    var dist = Math.hypot(dx, dy);
-    if (pinchStartDist > 0){
-      zoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
-    }
-    var cx = (t[0].clientX + t[1].clientX) / 2;
-    var cy = (t[0].clientY + t[1].clientY) / 2;
-    var panDx = (cx - pinchCenterX) / (scale * zoom);
-    var panDy = (cy - pinchCenterY) / (scale * zoom);
-    offsetX = Math.max(0, panStartOffX - panDx);
-    offsetY = Math.max(0, panStartOffY - panDy);
-    fitCanvasToStage();
+    var dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    if (pinchStartDist < 1) return;
+
+    zoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
+
+    var curCx = (t[0].clientX + t[1].clientX) / 2;
+    var curCy = (t[0].clientY + t[1].clientY) / 2;
+
+    // Zoom around pinch center: keep P fixed at its screen position
+    // screen(P) = (P - imgW/2 + offsetX) * fs * zoom + canvasW/2
+    // (P - imgW/2 + offsetX_new) * zoom = (P - imgW/2 + offsetX_old) * zoom_old
+    // offsetX_new = (P - imgW/2 + offsetX_old) * zoom_old / zoom - P + imgW/2
+    offsetX = (pinchCenterImgX - imgW / 2 + pinchStartOffX) * pinchStartZoom / zoom - pinchCenterImgX + imgW / 2;
+    offsetY = (pinchCenterImgY - imgH / 2 + pinchStartOffY) * pinchStartZoom / zoom - pinchCenterImgY + imgH / 2;
+
+    // Pan: centroid movement in screen → offset shift in image coords
+    var rect = canvas.getBoundingClientRect();
+    var ratioX = canvas.width / rect.width;
+    var ratioY = canvas.height / rect.height;
+    var fs = fitScale();
+    var dScrX = (curCx - pinchCenterScrX) * ratioX;  // canvas-buffer delta
+    var dScrY = (curCy - pinchCenterScrY) * ratioY;
+    // 1 image-space offset = fs*zoom canvas-buffer pixels at screen
+    // dScrX canvas-buffer pixels = dScrX / (fs * zoom) image offset
+    offsetX += dScrX / (fs * zoom);
+    offsetY += dScrY / (fs * zoom);
+
     draw();
     showZoomIndicator();
     updateZoomButtons();
   }, {passive: false});
+
   canvas.addEventListener('touchend', function(e){
     if (e.touches.length < 2){ isPinching = false; }
   });
 
-  // --- scroll wheel zoom ---
+  // --- wheel zoom (desktop) ---
   canvas.addEventListener('wheel', function(e){
     if (!img) return;
-    if (e.ctrlKey || e.metaKey || e.deltaY !== 0){
-      e.preventDefault();
-      var delta = -e.deltaY * 0.001;
-      var old = zoom;
-      zoom = Math.max(1, Math.min(10, zoom + delta));
-      if (zoom !== old){
-        fitCanvasToStage();
-        draw();
-        showZoomIndicator();
-        updateZoomButtons();
-      }
+    e.preventDefault();
+    var pt = screenToImage(e.clientX, e.clientY);
+    var oldZoom = zoom;
+    var delta = 1 - e.deltaY * 0.001;
+    zoom = Math.max(1, Math.min(10, zoom * delta));
+    if (zoom !== oldZoom){
+      // Keep mouse image point fixed: (P - imgW/2 + offsetX_new) * zoom = (P - imgW/2 + offsetX) * oldZoom
+      offsetX = (pt.x - imgW / 2 + offsetX) * oldZoom / zoom - pt.x + imgW / 2;
+      offsetY = (pt.y - imgH / 2 + offsetY) * oldZoom / zoom - pt.y + imgH / 2;
+      draw(); showZoomIndicator(); updateZoomButtons();
     }
   }, {passive: false});
 
   // --- zoom buttons ---
   function zoomBy(f){
     if (!img) return;
-    var old = zoom;
+    var oldZoom = zoom;
     zoom = Math.max(1, Math.min(10, zoom * f));
-    if (zoom !== old){
-      fitCanvasToStage(); draw(); showZoomIndicator(); updateZoomButtons();
+    if (zoom !== oldZoom){
+      // Keep image center at canvas center: offsetX * zoom = offsetX_new * zoom
+      offsetX = offsetX * oldZoom / zoom;
+      offsetY = offsetY * oldZoom / zoom;
+      draw(); showZoomIndicator(); updateZoomButtons();
     }
   }
   btnZoomIn.addEventListener('click', function(){ zoomBy(1.4); });
   btnZoomOut.addEventListener('click', function(){ zoomBy(1/1.4); });
   btnZoomReset.addEventListener('click', function(){
-    resetZoom();
-    fitCanvasToStage(); draw(); updateZoomButtons();
+    resetZoom(); fitCanvasToStage(); draw(); updateZoomButtons();
   });
 
   // --- file picking ---
@@ -906,54 +886,19 @@
     if (f.size > 50 * 1024 * 1024){
       showToast('حجم تصویر بیش از ۵۰ مگابایت است'); fileInput.value = ''; return;
     }
-    loadImageFile(f);
-    fileInput.value = '';
+    loadImageFile(f); fileInput.value = '';
   });
 
   btnReset.addEventListener('click', function(){
     points = []; draw(); updateSteps(); updateButtons(); renderResult();
   });
 
-  // --- auto edge snap ---
   btnSnap.addEventListener('click', function(){
-    if (!img || points.length < 3){ showToast('ابتدا سه نقطه را قرار دهید'); return; }
-    var refined = refinePointAlongAxis(1);
-    if (refined){
-      points[1] = refined;
-      draw(); renderResult();
-      showToast('مرز اصلاح شد', 1500);
-    } else {
-      showToast('اصلاح خودکار ممکن نشد', 1800);
-    }
+    if (!img) return;
+    runAutoDetect();
   });
 
-  function refinePointAlongAxis(idx){
-    var p1=points[0], p3=points[2];
-    var ax=p3.x-p1.x, ay=p3.y-p1.y, al=Math.hypot(ax,ay);
-    if (al<4) return null;
-    var ux=ax/al, uy=ay/al;
-    var cur=points[idx], ct=((cur.x-p1.x)*ax+(cur.y-p1.y)*ay)/(al*al);
-    var half=al*0.12, step=Math.max(1,al*0.004);
-    var imgData;
-    try { imgData = ctx.getImageData(0,0,canvas.width,canvas.height); } catch(e){ return null; }
-    function lumAt(x,y){
-      x=Math.round(Math.max(0,Math.min(canvas.width-1,x)));
-      y=Math.round(Math.max(0,Math.min(canvas.height-1,y)));
-      var i=(y*canvas.width+x)*4;
-      return 0.299*imgData.data[i]+0.587*imgData.data[i+1]+0.114*imgData.data[i+2];
-    }
-    var cx=p1.x+ux*(ct*al), cy=p1.y+uy*(ct*al);
-    var prev=null, bestG=-1, bestD=0;
-    for (var d=-half; d<=half; d+=step){
-      var l=lumAt(cx+ux*d, cy+uy*d);
-      if (prev!==null){ var g=Math.abs(l-prev); if(g>bestG){ bestG=g; bestD=d-step/2; } }
-      prev=l;
-    }
-    if (bestG<3) return null;
-    return {x:cx+ux*bestD, y:cy+uy*bestD};
-  }
-
-  // --- download ---
+  // --- download annotated image (btnDownload) ---
   btnDownload.addEventListener('click', function(){
     if (!img || points.length!==3) return;
     var link = document.createElement('a');
@@ -965,21 +910,30 @@
     showToast('تصویر خروجی ذخیره شد', 1500);
   });
 
-  // --- download app ---
-  downloadAppLink.addEventListener('click', function(e){
-    e.preventDefault();
-    var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-    var blob = new Blob([html], {type:'text/html;charset=utf-8'});
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement('a');
-    link.download = 'hct-reader.html';
-    link.href = url;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    showToast('فایل اپ با موفقیت ذخیره شد', 2000);
-  });
+  // --- download app (footer element, register after DOM parsed) ---
+  function setupDownloadApp(){
+    var el = document.getElementById('downloadAppLink');
+    if (!el) return;
+    el.addEventListener('click', function(e){
+      e.preventDefault();
+      var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      var blob = new Blob([html], {type:'text/html;charset=utf-8'});
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.download = 'hct-reader.html';
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('فایل اپ با موفقیت ذخیره شد', 2000);
+    });
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', setupDownloadApp);
+  } else {
+    setupDownloadApp();
+  }
 
   // --- history ---
   var HKEY = 'erythron_hct_history_v1';
@@ -1021,7 +975,9 @@
   btnCloseHelp.addEventListener('click', function(){ helpModal.classList.add('hidden'); });
   helpModal.addEventListener('click', function(e){ if(e.target===helpModal) helpModal.classList.add('hidden'); });
 
-  window.addEventListener('resize', function(){ if(img){ fitCanvasToStage(); draw(); } });
+  window.addEventListener('resize', function(){
+    if (img){ fitCanvasToStage(); draw(); }
+  });
 
   updateButtons(); updateZoomButtons(); updateSteps(); renderResult();
 })();
