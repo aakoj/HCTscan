@@ -77,6 +77,7 @@
     background:linear-gradient(160deg,#281613 0%,#3a1f1a 100%);
     display:flex;align-items:center;justify-content:center;
     overflow:hidden;
+    touch-action:pan-x pan-y;
   }
   .stage canvas{
     touch-action:none;
@@ -96,6 +97,25 @@
   .tube-glyph .g-plasma{height:56%;bottom:44%;background:var(--plasma);opacity:.85;}
   @keyframes breathe{0%,100%{opacity:.5}50%{opacity:1}}
   .tube-glyph{animation:breathe 3.2s ease-in-out infinite;}
+
+  .zoom-indicator{
+    position:absolute;top:8px;left:50%;transform:translateX(-50%);
+    background:rgba(0,0,0,0.55);color:#fff;padding:3px 14px;border-radius:30px;
+    font-size:clamp(10px,1.6vw,12px);font-weight:600;z-index:5;
+    pointer-events:none;opacity:0;transition:opacity .2s ease;
+    font-family:'Vazirmatn',sans-serif;white-space:nowrap;
+  }
+  .zoom-indicator.show{opacity:1;}
+
+  .detect-spinner{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:rgba(0,0,0,0.7);color:#fff;padding:12px 24px;border-radius:16px;
+    font-size:clamp(12px,2.2vw,15px);z-index:6;pointer-events:none;
+    display:none;align-items:center;gap:12px;font-family:'Vazirmatn',sans-serif;font-weight:600;
+  }
+  .detect-spinner.show{display:flex;}
+  .spinner-ring{width:20px;height:20px;border:3px solid rgba(255,255,255,0.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
 
   .steps{
     flex:0 0 auto;
@@ -213,7 +233,7 @@
       <circle cx="32" cy="36" r="3" fill="#b8493c" stroke="#fff" stroke-width="1.2"/>
     </svg>
     <div style="flex:1;min-width:0;">
-      <h1>HCT Scan — خوانش هماتوکریت</h1>
+      <h1>HCT Scan</h1>
       <div style="font-size:clamp(9px,1.5vw,11px);color:#f5d4ce;opacity:.85;margin-top:1px;">Hematocrit Reader &mdash; Microhematocrit Tube Photo Analyzer</div>
     </div>
   </div>
@@ -227,6 +247,8 @@
       <b>نور یکنواخت و پس‌زمینه ساده</b> دقت خوانش را بالا می‌برد
     </div>
     <canvas id="canvas"></canvas>
+    <div id="zoomIndicator" class="zoom-indicator">100%</div>
+    <div id="detectSpinner" class="detect-spinner"><div class="spinner-ring"></div>در حال تشخیص خودکار...</div>
     <div id="watermark" style="position:absolute;bottom:4px;right:6px;color:rgba(255,255,255,0.12);font-size:clamp(6px,1vw,9px);font-weight:500;pointer-events:none;z-index:2;letter-spacing:.3px;font-family:'Vazirmatn',sans-serif;white-space:nowrap;">دکتر امیر عصری &middot; @lab.sciences</div>
   </div>
 
@@ -253,6 +275,9 @@
       <button class="ghost" id="btnReset" disabled>بازنشانی نقاط</button>
     </div>
     <div class="btn-row" style="margin-top:8px;">
+      <button class="ghost" id="btnZoomIn" disabled>➕ زوم</button>
+      <button class="ghost" id="btnZoomOut" disabled>➖ زوم</button>
+      <button class="ghost" id="btnZoomReset" disabled>انطباق</button>
       <button class="ghost" id="btnSave" disabled>ذخیره در تاریخچه</button>
       <button class="ghost" id="btnDownload" disabled>دریافت خروجی</button>
       <button class="subtle" id="btnHistory">مشاهده تاریخچه</button>
@@ -279,15 +304,24 @@
     <div style="font-size:clamp(11px,2vw,13px);line-height:2.2;color:var(--ink);">
       <p><b>1. عکس بگیرید یا انتخاب کنید</b><br>
       دکمه "انتخاب / گرفتن عکس" را بزنید. تیوب سانتریفیوژشده روی سطح ساده با نور یکنواخت باشد.</p>
-      <p><b>2. سه نقطه بگذارید</b><br>
-      به ترتیب روی تصویر تیوب ضربه بزنید:<br>
+      <p><b>2. تشخیص خودکار (جدید)</b><br>
+      پس از بارگذاری عکس، نرم‌افزار به صورت خودکار تیوب را شناسایی کرده و سه نقطه را تعیین می‌کند و روی تیوب زوم می‌کند. در صورت نیاز نقاط را با انگشت اصلاح کنید.</p>
+      <p><b>3. سه نقطه بگذارید</b><br>
+      اگر تشخیص خودکار دقیق نبود، سه نقطه را به ترتیب روی تصویر تیوب ضربه بزنید:<br>
       <span style="color:#f0c75e;font-weight:700;">نقطه 1 (طلایی)</span> &mdash; بالای ستون پلاسما<br>
       <span style="color:#d4594a;font-weight:700;">نقطه 2 (قرمز)</span> &mdash; مرز پلاسما/گلبول قرمز (بالای بافی‌کت)<br>
       <span style="color:#b8493c;font-weight:700;">نقطه 3 (قرمز تیره)</span> &mdash; انتهای ستون گلبول قرمز</p>
-      <p><b>3. اصلاح کنید</b><br>
+      <p><b>4. زوم کنید</b><br>
+      برای دقت بیشتر، با دو انگشت روی تصویر زوم کنید یا در دسکتاپ از چرخ موس استفاده کنید. برای جابه‌جایی در حالت زوم، با دو انگشت بکشید.</p>
+      <p><b>5. اصلاح کنید</b><br>
       نقطه‌ها را با انگشت بکشید تا جای دقیق بنشینند. دکمه "تشخیص خودکار مرز" نقطه 2 را به صورت هوشمند تنظیم می‌کند.</p>
-      <p><b>4. ذخیره کنید</b><br>
+      <p><b>6. ذخیره کنید</b><br>
       برای ثبت در تاریخچه دکمه "ذخیره در تاریخچه" را بزنید.</p>
+      <p><b>7. iOS — افزودن به هوم اسکرین</b><br>
+      در سافاری iOS:<br>
+      دکمه Share (مربع با فلش بالا) را بزنید &rarr; <b>Add to Home Screen</b> &rarr; Add.<br>
+      آیکون اپ روی هوم اسکرین شما قرار می‌گیرد و مثل یک اپ واقعی اجرا می‌شود (بدون نوار مرورگر).<br>
+      همچنین می‌توانید با دکمه "دانلود اپ" در پایین صفحه، فایل را ذخیره کرده و بعداً در هر دستگاهی آفلاین استفاده کنید.</p>
       <p style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:clamp(10px,1.8vw,12px);color:var(--ink-soft);">
       <b>تهیه کننده:</b> دکتر امیر عصری &middot;
       <b>نسخه:</b> 1.0.0<br>
@@ -298,31 +332,22 @@
 </div>
 
 <script>
-// === حفاظت از کپی رایت ===
 (function(){
-  function protect(){
-    document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
-    document.addEventListener('keydown', function(e){
-      if(
-        e.key === 'F12' ||
-        (e.ctrlKey && e.shiftKey && (e.key==='I'||e.key==='J'||e.key==='C')) ||
-        (e.ctrlKey && (e.key==='U'||e.key==='S'||e.key==='C'))
-      ){
-        e.preventDefault(); return false;
-      }
-    });
-  }
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',protect);}
-  else{protect();}
+  document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  document.addEventListener('keydown', function(e){
+    if(
+      e.key === 'F12' ||
+      (e.ctrlKey && e.shiftKey && (e.key==='I'||e.key==='J'||e.key==='C')) ||
+      (e.ctrlKey && (e.key==='U'||e.key==='S'||e.key==='C'))
+    ){ e.preventDefault(); return false; }
+  });
 })();
 
 (function(){
   "use strict";
 
-  var faDigits = ['0','1','2','3','4','5','6','7','8','9'];
-  function toFa(n){
-    return String(n).replace(/[0-9]/g, function(d){ return faDigits[+d]; });
-  }
+  var faDigits = '۰۱۲۳۴۵۶۷۸۹';
+  function toFa(n){ return String(n).replace(/[0-9]/g, function(d){ return faDigits[+d]; }); }
 
   function gregorianToJalali(gy, gm, gd){
     var g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
@@ -342,20 +367,25 @@
   }
   function jalaliDateString(d){
     var j = gregorianToJalali(d.getFullYear(), d.getMonth()+1, d.getDate());
-    var hh = ('0'+d.getHours()).slice(-2), mm = ('0'+d.getMinutes()).slice(-2);
-    return toFa(j[0]+'/'+('0'+j[1]).slice(-2)+'/'+('0'+j[2]).slice(-2)+'  '+hh+':'+mm);
+    return toFa(j[0]+'/'+('0'+j[1]).slice(-2)+'/'+('0'+j[2]).slice(-2)+'  '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2));
   }
 
   var stage = document.getElementById('stage');
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d');
   var emptyHint = document.getElementById('emptyHint');
+  var zoomIndicator = document.getElementById('zoomIndicator');
+  var detectSpinner = document.getElementById('detectSpinner');
   var fileInput = document.getElementById('fileInput');
   var btnPick = document.getElementById('btnPick');
   var btnSnap = document.getElementById('btnSnap');
   var btnReset = document.getElementById('btnReset');
+  var btnZoomIn = document.getElementById('btnZoomIn');
+  var btnZoomOut = document.getElementById('btnZoomOut');
+  var btnZoomReset = document.getElementById('btnZoomReset');
   var btnSave = document.getElementById('btnSave');
   var btnDownload = document.getElementById('btnDownload');
+  var downloadAppLink = document.getElementById('downloadAppLink');
   var btnHistory = document.getElementById('btnHistory');
   var btnCloseHistory = document.getElementById('btnCloseHistory');
   var btnHelp = document.getElementById('btnHelp');
@@ -372,53 +402,46 @@
   var img = null;
   var imgW = 0, imgH = 0;
   var scale = 1;
+  var zoom = 1;
+  var offsetX = 0, offsetY = 0;
   var points = [];
   var draggingIndex = -1;
   var lastHct = null;
+  var isPinching = false;
+  var pinchStartDist = 0, pinchStartZoom = 1;
+  var pinchCenterX = 0, pinchCenterY = 0;
+  var panStartOffX = 0, panStartOffY = 0;
 
-  function showToast(msg){
+  function showToast(msg, dur){
     toastEl.textContent = msg;
     toastEl.classList.add('show');
-    setTimeout(function(){ toastEl.classList.remove('show'); }, 1800);
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, dur||1800);
   }
 
   function fitCanvasToStage(){
     if (!img) return;
     var maxW = stage.clientWidth;
     var maxH = stage.clientHeight;
-    var ratio = Math.min(maxW / imgW, maxH / imgH);
-    scale = ratio;
-    canvas.width = imgW;
-    canvas.height = imgH;
-    canvas.style.width = Math.round(imgW * ratio) + 'px';
-    canvas.style.height = Math.round(imgH * ratio) + 'px';
+    scale = Math.min(maxW / imgW, maxH / imgH);
+    canvas.width = Math.round(imgW * scale * zoom);
+    canvas.height = Math.round(imgH * scale * zoom);
   }
 
-  function loadImageFile(file){
-    var url = URL.createObjectURL(file);
-    var im = new Image();
-    im.onload = function(){
-      img = im;
-      imgW = im.naturalWidth;
-      imgH = im.naturalHeight;
-      points = [];
-      draw();
-      fitCanvasToStage();
-      draw();
-      emptyHint.style.display = 'none';
-      canvas.style.display = 'block';
-      updateButtons();
-      updateSteps();
-      URL.revokeObjectURL(url);
-    };
-    im.src = url;
+  function resetZoom(){
+    zoom = 1; offsetX = 0; offsetY = 0;
+    zoomIndicator.classList.remove('show');
   }
 
   function draw(){
     if (!img) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img, 0, 0, imgW, imgH);
-
+    ctx.save();
+    ctx.scale(scale * zoom, scale * zoom);
+    ctx.translate(-offsetX, -offsetY);
+    var drawX = (stage.clientWidth / (scale * zoom) - imgW) / 2;
+    var drawY = (stage.clientHeight / (scale * zoom) - imgH) / 2;
+    ctx.drawImage(img, drawX, drawY, imgW, imgH);
     if (points.length >= 1){
       var labels = ['1','2','3'];
       var colors = ['#f0c75e', '#d4594a', '#b8493c'];
@@ -433,21 +456,22 @@
         ctx.restore();
       }
       points.forEach(function(p, i){
-        var r = Math.max(10, imgW*0.012);
+        var r = Math.max(10, imgW*0.014);
         ctx.beginPath();
         ctx.arc(p.x, p.y, r, 0, Math.PI*2);
         ctx.fillStyle = colors[i];
         ctx.fill();
-        ctx.lineWidth = Math.max(2, imgW*0.0018);
+        ctx.lineWidth = Math.max(2.5, imgW*0.002);
         ctx.strokeStyle = '#fff';
         ctx.stroke();
-        ctx.font = 'bold ' + Math.max(14, imgW*0.02) + 'px Vazirmatn, sans-serif';
+        ctx.font = 'bold ' + Math.max(16, imgW*0.022) + 'px Vazirmatn, sans-serif';
         ctx.fillStyle = '#fff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(labels[i], p.x, p.y);
       });
     }
+    ctx.restore();
   }
 
   function updateSteps(){
@@ -464,65 +488,308 @@
     btnReset.disabled = !img;
     btnSave.disabled = !haveAll;
     btnDownload.disabled = !haveAll;
+    btnZoomIn.disabled = !img;
+    btnZoomOut.disabled = !img;
+    btnZoomReset.disabled = !img;
+  }
+
+  function updateZoomButtons(){
+    btnZoomIn.disabled = !img || zoom >= 10;
+    btnZoomOut.disabled = !img || zoom <= 1;
+    btnZoomReset.disabled = !img || (zoom <= 1 && offsetX === 0 && offsetY === 0);
+  }
+
+  function showZoomIndicator(){
+    zoomIndicator.textContent = Math.round(zoom * 100) + '%';
+    zoomIndicator.classList.add('show');
+    clearTimeout(window._zoomTimer);
+    window._zoomTimer = setTimeout(function(){ zoomIndicator.classList.remove('show'); }, 1500);
   }
 
   function canvasCoordFromEvent(e){
     var rect = canvas.getBoundingClientRect();
-    var clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
-    var clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
-    var x = (clientX - rect.left) * (canvas.width / rect.width);
-    var y = (clientY - rect.top) * (canvas.height / rect.height);
+    var clientX = (e.touches&&e.touches[0]) ? e.touches[0].clientX : e.clientX;
+    var clientY = (e.touches&&e.touches[0]) ? e.touches[0].clientY : e.clientY;
+    var rawX = (clientX - rect.left) * (canvas.width / rect.width);
+    var rawY = (clientY - rect.top) * (canvas.height / rect.height);
+    var x = rawX / (scale * zoom) + offsetX - (stage.clientWidth / (scale * zoom) - imgW) / 2;
+    var y = rawY / (scale * zoom) + offsetY - (stage.clientHeight / (scale * zoom) - imgH) / 2;
     return {x:x, y:y};
   }
 
   function nearestPointIndex(pt, thresholdPx){
     var best = -1, bestD = Infinity;
+    var thresh = thresholdPx / (scale * zoom);
     points.forEach(function(p, i){
       var d = Math.hypot(p.x-pt.x, p.y-pt.y);
       if (d < bestD){ bestD = d; best = i; }
     });
-    if (bestD <= thresholdPx) return best;
+    if (bestD <= thresh) return best;
     return -1;
   }
 
   function computeHct(){
     if (points.length !== 3) return null;
-    var p1 = points[0], p2 = points[1], p3 = points[2];
-    var ax = p3.x - p1.x, ay = p3.y - p1.y;
-    var axisLenSq = ax*ax + ay*ay;
-    if (axisLenSq < 1) return null;
-    var t2 = ((p2.x-p1.x)*ax + (p2.y-p1.y)*ay) / axisLenSq;
-    t2 = Math.max(0, Math.min(1, t2));
-    var hct = (1 - t2) * 100;
-    return hct;
+    var p1=points[0], p2=points[1], p3=points[2];
+    var ax=p3.x-p1.x, ay=p3.y-p1.y, lensq=ax*ax+ay*ay;
+    if (lensq<1) return null;
+    var t2 = Math.max(0, Math.min(1, ((p2.x-p1.x)*ax+(p2.y-p1.y)*ay)/lensq));
+    return (1-t2)*100;
   }
 
   function renderResult(){
     var hct = computeHct();
-    var tubeCells = resultTube.querySelector('.g-cells');
-    var tubeBuffy = resultTube.querySelector('.g-buffy');
-    var tubePlasma = resultTube.querySelector('.g-plasma');
+    var tc = resultTube.querySelector('.g-cells');
+    var tb = resultTube.querySelector('.g-buffy');
+    var tp = resultTube.querySelector('.g-plasma');
     if (hct === null){
       resultNum.innerHTML = '&mdash;<small>% هماتوکریت</small>';
-      resultNote.textContent = 'سه نقطه را روی تصویر تیوب مشخص کنید تا مقدار محاسبه شود. نقطه‌ها را می‌توانید با کشیدن اصلاح کنید.';
-      tubeCells.style.height='0%'; tubeBuffy.style.height='0%'; tubeBuffy.style.bottom='0%';
-      tubePlasma.style.height='0%'; tubePlasma.style.bottom='0%';
-      lastHct = null;
-      return;
+      resultNote.textContent = 'سه نقطه را روی تصویر تیوب مشخص کنید تا مقدار محاسبه شود.';
+      tc.style.height='0%'; tb.style.height='0%'; tb.style.bottom='0%'; tp.style.height='0%'; tp.style.bottom='0%';
+      lastHct=null; return;
     }
     lastHct = hct;
     resultNum.innerHTML = toFa(hct.toFixed(1)) + '<small>% هماتوکریت</small>';
-    resultNote.innerHTML = 'محاسبه از نسبت طول ستون گلبول قرمز (نقطه 2 تا 3) به طول کل ستون (نقطه 1 تا 3). لایه بافی‌کت را از محاسبه خارج نگه دارید.';
-    var cellsPct = hct;
-    var plasmaPct = Math.max(0, 100 - hct);
-    tubeCells.style.height = cellsPct.toFixed(1)+'%';
-    tubeBuffy.style.height = '0%'; tubeBuffy.style.bottom = cellsPct.toFixed(1)+'%';
-    tubePlasma.style.height = plasmaPct.toFixed(1)+'%'; tubePlasma.style.bottom = cellsPct.toFixed(1)+'%';
+    resultNote.innerHTML = 'نسبت طول ستون گلبول قرمز به طول کل ستون.';
+    var cp = hct, pp = Math.max(0, 100-hct);
+    tc.style.height=cp.toFixed(1)+'%'; tb.style.height='0%'; tb.style.bottom=cp.toFixed(1)+'%';
+    tp.style.height=pp.toFixed(1)+'%'; tp.style.bottom=cp.toFixed(1)+'%';
+  }
+
+  // === AUTO DETECT TUBE & POINTS ===
+  function autoDetectPoints(){
+    if (!img) return false;
+    // Get image data into a temp canvas (avoid ctx transform)
+    var tc = document.createElement('canvas');
+    tc.width = imgW; tc.height = imgH;
+    var tctx = tc.getContext('2d');
+    tctx.drawImage(img, 0, 0);
+    var idata = tctx.getImageData(0, 0, imgW, imgH);
+    var d = idata.data;
+    var w = imgW, h = imgH;
+
+    // Find tube center x by analyzing lower portion of image for red stripe
+    var scanTop = Math.round(h * 0.4);
+    var scanBot = Math.round(h * 0.85);
+    // Accumulate redness per column
+    var colRedness = new Float32Array(w);
+    var colCount = new Float32Array(w);
+    for (var y = scanTop; y < scanBot; y++){
+      for (var x = 0; x < w; x++){
+        var idx = (y * w + x) * 4;
+        var r = d[idx], g = d[idx+1], b = d[idx+2];
+        // Redness score: high red, low green+blue
+        var red = Math.max(0, r - (g+b)/2);
+        colRedness[x] += red;
+        colCount[x]++;
+      }
+    }
+    // Average redness per column
+    var avgRed = [];
+    for (x = 0; x < w; x++){
+      avgRed[x] = colCount[x] > 0 ? colRedness[x]/colCount[x] : 0;
+    }
+    // Find column with peak redness
+    var peakX = 0, peakVal = 0;
+    for (x = 0; x < w; x++){
+      if (avgRed[x] > peakVal){ peakVal = avgRed[x]; peakX = x; }
+    }
+    if (peakVal < 5) return false; // No red detected
+
+    // Find tube left/right edges (where redness drops)
+    var minRed = peakVal * 0.25;
+    var left = peakX;
+    while (left > 0 && avgRed[left] > minRed) left--;
+    var right = peakX;
+    while (right < w-1 && avgRed[right] > minRed) right++;
+    var tubeW = right - left;
+    if (tubeW < 4 || tubeW > w*0.3) return false; // implausible tube width
+
+    // Find tube x-range edges more precisely using gradient
+    var edgeThreshold = 30;
+    var grad;
+    // Scan outward from peakX to find sharp luminosity drop
+    var tubeL = peakX, tubeR = peakX;
+    for (x = peakX; x >= Math.max(0, peakX-Math.round(w*0.15)); x--){
+      if (x < 1) break;
+      grad = Math.abs(avgRed[x] - avgRed[x-1]);
+      if (grad > peakVal*0.3 && avgRed[x] < peakVal*0.4){ tubeL = x; break; }
+      tubeL = x;
+    }
+    for (x = peakX; x <= Math.min(w-1, peakX+Math.round(w*0.15)); x++){
+      if (x >= w-1) break;
+      grad = Math.abs(avgRed[x] - avgRed[x+1]);
+      if (grad > peakVal*0.3 && avgRed[x] < peakVal*0.4){ tubeR = x; break; }
+      tubeR = x;
+    }
+
+    var cx = Math.round((tubeL + tubeR) / 2);
+    var halfW = Math.max(3, Math.round((tubeR-tubeL)*0.6));
+
+    // Scan vertically along tube center (averaged over tube width) to find layers
+    var windowW = Math.max(3, halfW);
+    var sampleL = Math.max(0, cx - windowW);
+    var sampleR = Math.min(w-1, cx + windowW);
+
+    // For each y, compute average RGB in tube window
+    function columnAvg(y){
+      var tr=0,tg=0,tb=0,c=0;
+      for (var sx = sampleL; sx <= sampleR; sx++){
+        var idx = (y * w + sx) * 4;
+        tr += d[idx]; tg += d[idx+1]; tb += d[idx+2]; c++;
+      }
+      return {r:tr/c, g:tg/c, b:tb/c};
+    }
+
+    // Scan from bottom up, detect transitions
+    var p1=null, p2=null, p3=null;
+    var state = 'bg'; // scanning from bottom: bg -> red -> buffy/plasma -> plasma -> empty
+    var prevColor = null;
+
+    for (var sy = h-1; sy >= 0; sy--){
+      var c = columnAvg(sy);
+      var lum = 0.299*c.r + 0.587*c.g + 0.114*c.b;
+      var redExcess = c.r - Math.max(c.g, c.b);
+      var isRed = redExcess > 12 && c.r > 60;
+      var isBright = lum > 180;
+      var isPlasma = (c.g > c.b && c.g > c.r*0.7 && !isRed) || (c.r > 30 && c.g > 30 && c.b < c.g && c.r < c.g*1.4 && !isRed);
+
+      if (state === 'bg'){
+        if (isRed || (c.r > 50 && c.g < c.r*0.9)){
+          p3 = {x:cx, y:sy};
+          state = 'red';
+        }
+      } else if (state === 'red'){
+        // Transition from red to non-red = buffy coat / plasma boundary
+        if (!isRed && prevColor && prevColor.r > 50){
+          p2 = {x:cx, y:sy};
+          state = 'plasma';
+        }
+      } else if (state === 'plasma'){
+        // Transition from non-red content to bright/empty = top of plasma
+        if (isBright && c.r < 50 && c.g < 50){
+          p1 = {x:cx, y:sy};
+          break;
+        }
+        // Also detect if content fades to nothing (very low color saturation)
+        var maxC = Math.max(c.r, c.g, c.b);
+        var minC = Math.min(c.r, c.g, c.b);
+        if (maxC < 15 || (maxC > 220 && maxC - minC < 10)){
+          p1 = {x:cx, y:sy};
+          break;
+        }
+      }
+      prevColor = c;
+    }
+
+    // If plasma top not found, use top of scan
+    if (!p1 && p2){ p1 = {x:cx, y:Math.round(h*0.2)}; }
+    if (!p3 && p2){ p3 = {x:cx, y:Math.round(h*0.85)}; }
+    if (!p2 && p3 && p1){ p2 = {x:cx, y:Math.round((p1.y+p3.y)*0.6)}; }
+
+    if (p1 && p2 && p3){
+      // Ensure order: p1 top, p2 middle, p3 bottom
+      if (p1.y > p2.y){ var t=p1; p1=p2; p2=t; }
+      if (p2.y > p3.y){ var t=p2; p2=p3; p3=t; }
+      if (p1.y > p2.y){ var t=p1; p1=p2; p2=t; }
+      points = [p1, p2, p3];
+      return true;
+    }
+    return false;
+  }
+
+  function autoZoomOnTube(){
+    if (!img || points.length !== 3) return;
+    // Find bounding box of points
+    var minX = imgW, maxX = 0, minY = imgH, maxY = 0;
+    points.forEach(function(p){
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    });
+    // Expand box for context
+    var padX = (maxX - minX) * 0.3;
+    var padY = (maxY - minY) * 0.15;
+    minX = Math.max(0, minX - padX);
+    maxX = Math.min(imgW, maxX + padX);
+    minY = Math.max(0, minY - padY);
+    maxY = Math.min(imgH, maxY + padY);
+    var bw = maxX - minX, bh = maxY - minY;
+    if (bw < 10 || bh < 10) return;
+
+    // Calculate zoom to fit tube with some margin
+    // We want the tube to take up ~70% of stage height
+    var rawH = stage.clientHeight;
+    var rawW = stage.clientWidth;
+    var zoomX = (rawW * 0.8) / (bw * scale);
+    var zoomY = (rawH * 0.75) / (bh * scale);
+    var target = Math.min(zoomX, zoomY);
+    target = Math.max(1.5, Math.min(8, target));
+
+    // Apply zoom and offset to center on tube
+    zoom = target;
+    var tubeCenterX = (minX + maxX) / 2;
+    var tubeCenterY = (minY + maxY) / 2;
+    var stageCenterX = stage.clientWidth / 2;
+    var stageCenterY = stage.clientHeight / 2;
+    offsetX = tubeCenterX - stageCenterX / (scale * zoom) + (imgW / 2);
+    offsetY = tubeCenterY - stageCenterY / (scale * zoom) + (imgH / 2);
+    offsetX = Math.max(0, offsetX);
+    offsetY = Math.max(0, offsetY);
+
+    fitCanvasToStage();
+    draw();
+    showZoomIndicator();
+    updateZoomButtons();
+  }
+
+  function runAutoDetect(){
+    if (!img) return;
+    detectSpinner.classList.add('show');
+    // Run detection asynchronously to let spinner render
+    setTimeout(function(){
+      var ok = autoDetectPoints();
+      detectSpinner.classList.remove('show');
+      if (ok){
+        updateSteps();
+        updateButtons();
+        renderResult();
+        autoZoomOnTube();
+        showToast('تیوب و نقاط به صورت خودکار تشخیص داده شد', 2200);
+      } else {
+        showToast('تشخیص خودکار ممکن نشد؛ نقاط را دستی قرار دهید', 2500);
+      }
+    }, 100);
+  }
+
+  // --- image loading with auto-detect ---
+  function loadImageFile(file){
+    var url = URL.createObjectURL(file);
+    var im = new Image();
+    im.onload = function(){
+      img = im;
+      imgW = im.naturalWidth;
+      imgH = im.naturalHeight;
+      points = [];
+      resetZoom();
+      fitCanvasToStage();
+      draw();
+      emptyHint.style.display = 'none';
+      canvas.style.display = 'block';
+      updateButtons();
+      updateSteps();
+      renderResult();
+      URL.revokeObjectURL(url);
+      // Auto-detect points
+      runAutoDetect();
+    };
+    im.src = url;
   }
 
   // --- pointer interactions ---
   canvas.addEventListener('pointerdown', function(e){
-    if (!img) return;
+    if (!img || isPinching) return;
     e.preventDefault();
     var pt = canvasCoordFromEvent(e);
     var thresh = imgW * 0.035;
@@ -541,7 +808,7 @@
     }
   });
   canvas.addEventListener('pointermove', function(e){
-    if (draggingIndex === -1) return;
+    if (draggingIndex === -1 || isPinching) return;
     var pt = canvasCoordFromEvent(e);
     pt.x = Math.max(0, Math.min(imgW, pt.x));
     pt.y = Math.max(0, Math.min(imgH, pt.y));
@@ -549,14 +816,84 @@
     draw();
     renderResult();
   });
-  function endDrag(e){
-    if (draggingIndex !== -1){
-      draggingIndex = -1;
-    }
-  }
+  function endDrag(){ draggingIndex = -1; }
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('pointerleave', endDrag);
+
+  // --- touch pinch zoom + two-finger pan ---
+  canvas.addEventListener('touchstart', function(e){
+    if (!img) return;
+    if (e.touches.length === 2){
+      e.preventDefault();
+      isPinching = true;
+      var t = e.touches;
+      var dx = t[0].clientX - t[1].clientX;
+      var dy = t[0].clientY - t[1].clientY;
+      pinchStartDist = Math.hypot(dx, dy);
+      pinchStartZoom = zoom;
+      pinchCenterX = (t[0].clientX + t[1].clientX) / 2;
+      pinchCenterY = (t[0].clientY + t[1].clientY) / 2;
+      panStartOffX = offsetX; panStartOffY = offsetY;
+    }
+  }, {passive: false});
+  canvas.addEventListener('touchmove', function(e){
+    if (!img || !isPinching || e.touches.length !== 2) return;
+    e.preventDefault();
+    var t = e.touches;
+    var dx = t[0].clientX - t[1].clientX;
+    var dy = t[0].clientY - t[1].clientY;
+    var dist = Math.hypot(dx, dy);
+    if (pinchStartDist > 0){
+      zoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
+    }
+    var cx = (t[0].clientX + t[1].clientX) / 2;
+    var cy = (t[0].clientY + t[1].clientY) / 2;
+    var panDx = (cx - pinchCenterX) / (scale * zoom);
+    var panDy = (cy - pinchCenterY) / (scale * zoom);
+    offsetX = Math.max(0, panStartOffX - panDx);
+    offsetY = Math.max(0, panStartOffY - panDy);
+    fitCanvasToStage();
+    draw();
+    showZoomIndicator();
+    updateZoomButtons();
+  }, {passive: false});
+  canvas.addEventListener('touchend', function(e){
+    if (e.touches.length < 2){ isPinching = false; }
+  });
+
+  // --- scroll wheel zoom ---
+  canvas.addEventListener('wheel', function(e){
+    if (!img) return;
+    if (e.ctrlKey || e.metaKey || e.deltaY !== 0){
+      e.preventDefault();
+      var delta = -e.deltaY * 0.001;
+      var old = zoom;
+      zoom = Math.max(1, Math.min(10, zoom + delta));
+      if (zoom !== old){
+        fitCanvasToStage();
+        draw();
+        showZoomIndicator();
+        updateZoomButtons();
+      }
+    }
+  }, {passive: false});
+
+  // --- zoom buttons ---
+  function zoomBy(f){
+    if (!img) return;
+    var old = zoom;
+    zoom = Math.max(1, Math.min(10, zoom * f));
+    if (zoom !== old){
+      fitCanvasToStage(); draw(); showZoomIndicator(); updateZoomButtons();
+    }
+  }
+  btnZoomIn.addEventListener('click', function(){ zoomBy(1.4); });
+  btnZoomOut.addEventListener('click', function(){ zoomBy(1/1.4); });
+  btnZoomReset.addEventListener('click', function(){
+    resetZoom();
+    fitCanvasToStage(); draw(); updateZoomButtons();
+  });
 
   // --- file picking ---
   btnPick.addEventListener('click', function(){ fileInput.click(); });
@@ -564,170 +901,129 @@
     var f = e.target.files && e.target.files[0];
     if (!f) return;
     if (!f.type.match(/^image\/(png|jpeg|webp|gif)$/)){
-      showToast('فقط تصویر (PNG/JPEG/WebP) مجاز است');
-      fileInput.value = '';
-      return;
+      showToast('فقط تصویر (PNG/JPEG/WebP) مجاز است'); fileInput.value = ''; return;
     }
     if (f.size > 50 * 1024 * 1024){
-      showToast('حجم تصویر بیش از ۵۰ مگابایت است');
-      fileInput.value = '';
-      return;
+      showToast('حجم تصویر بیش از ۵۰ مگابایت است'); fileInput.value = ''; return;
     }
     loadImageFile(f);
     fileInput.value = '';
   });
 
   btnReset.addEventListener('click', function(){
-    points = [];
-    draw();
-    updateSteps();
-    updateButtons();
-    renderResult();
+    points = []; draw(); updateSteps(); updateButtons(); renderResult();
   });
 
   // --- auto edge snap ---
   btnSnap.addEventListener('click', function(){
-    if (!img || points.length === 0) return;
-    if (points.length < 3){
-      showToast('برای تشخیص خودکار، ابتدا هر سه نقطه را قرار دهید');
-      return;
-    }
-    var idx = 1;
-    var refined = refinePointAlongAxis(idx);
+    if (!img || points.length < 3){ showToast('ابتدا سه نقطه را قرار دهید'); return; }
+    var refined = refinePointAlongAxis(1);
     if (refined){
-      points[idx] = refined;
-      draw();
-      renderResult();
-      showToast('مرز به صورت خودکار اصلاح شد؛ در صورت نیاز با انگشت جابه‌جا کنید');
+      points[1] = refined;
+      draw(); renderResult();
+      showToast('مرز اصلاح شد', 1500);
     } else {
-      showToast('تشخیص خودکار ممکن نشد؛ لطفاً به صورت دستی تنظیم کنید');
+      showToast('اصلاح خودکار ممکن نشد', 1800);
     }
   });
 
   function refinePointAlongAxis(idx){
-    var p1 = points[0], p3 = points[2];
-    var ax = p3.x-p1.x, ay = p3.y-p1.y;
-    var axisLen = Math.hypot(ax, ay);
-    if (axisLen < 4) return null;
-    var ux = ax/axisLen, uy = ay/axisLen;
-    var current = points[idx];
-    var curT = ((current.x-p1.x)*ax + (current.y-p1.y)*ay) / (axisLen*axisLen);
-    var searchHalf = axisLen * 0.12;
-    var stepPx = Math.max(1, axisLen*0.004);
+    var p1=points[0], p3=points[2];
+    var ax=p3.x-p1.x, ay=p3.y-p1.y, al=Math.hypot(ax,ay);
+    if (al<4) return null;
+    var ux=ax/al, uy=ay/al;
+    var cur=points[idx], ct=((cur.x-p1.x)*ax+(cur.y-p1.y)*ay)/(al*al);
+    var half=al*0.12, step=Math.max(1,al*0.004);
     var imgData;
-    try {
-      imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    } catch(err){
-      return null;
+    try { imgData = ctx.getImageData(0,0,canvas.width,canvas.height); } catch(e){ return null; }
+    function lumAt(x,y){
+      x=Math.round(Math.max(0,Math.min(canvas.width-1,x)));
+      y=Math.round(Math.max(0,Math.min(canvas.height-1,y)));
+      var i=(y*canvas.width+x)*4;
+      return 0.299*imgData.data[i]+0.587*imgData.data[i+1]+0.114*imgData.data[i+2];
     }
-    function luminanceAt(x,y){
-      x = Math.round(Math.max(0, Math.min(canvas.width-1, x)));
-      y = Math.round(Math.max(0, Math.min(canvas.height-1, y)));
-      var idxPix = (y*canvas.width + x) * 4;
-      var r = imgData.data[idxPix], g = imgData.data[idxPix+1], b = imgData.data[idxPix+2];
-      return 0.299*r + 0.587*g + 0.114*b;
+    var cx=p1.x+ux*(ct*al), cy=p1.y+uy*(ct*al);
+    var prev=null, bestG=-1, bestD=0;
+    for (var d=-half; d<=half; d+=step){
+      var l=lumAt(cx+ux*d, cy+uy*d);
+      if (prev!==null){ var g=Math.abs(l-prev); if(g>bestG){ bestG=g; bestD=d-step/2; } }
+      prev=l;
     }
-    var centerX = p1.x + ux*(curT*axisLen);
-    var centerY = p1.y + uy*(curT*axisLen);
-    var startD = -searchHalf, endD = searchHalf;
-    var prevLum = null, bestGrad = -1, bestD = 0;
-    for (var d = startD; d <= endD; d += stepPx){
-      var x = centerX + ux*d, y = centerY + uy*d;
-      var lum = luminanceAt(x,y);
-      if (prevLum !== null){
-        var grad = Math.abs(lum - prevLum);
-        if (grad > bestGrad){ bestGrad = grad; bestD = d - stepPx/2; }
-      }
-      prevLum = lum;
-    }
-    if (bestGrad < 3) return null;
-    return { x: centerX + ux*bestD, y: centerY + uy*bestD };
+    if (bestG<3) return null;
+    return {x:cx+ux*bestD, y:cy+uy*bestD};
   }
 
-  // --- download annotated image ---
+  // --- download ---
   btnDownload.addEventListener('click', function(){
-    if (!img || points.length !== 3) return;
+    if (!img || points.length!==3) return;
     var link = document.createElement('a');
-    link.download = 'HCT_' + (lastHct ? lastHct.toFixed(1) : 'result') + '_percent.png';
+    link.download = 'HCT_'+(lastHct?lastHct.toFixed(1):'result')+'_percent.png';
     link.href = canvas.toDataURL('image/png');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('تصویر خروجی ذخیره شد');
+    showToast('تصویر خروجی ذخیره شد', 1500);
   });
 
-  // --- history (localStorage) ---
+  // --- download app ---
+  downloadAppLink.addEventListener('click', function(e){
+    e.preventDefault();
+    var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    var blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.download = 'hct-reader.html';
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('فایل اپ با موفقیت ذخیره شد', 2000);
+  });
+
+  // --- history ---
   var HKEY = 'erythron_hct_history_v1';
   function loadHistory(){
-    try { return JSON.parse(localStorage.getItem(HKEY) || '[]'); }
-    catch(e){ return []; }
+    try{ return JSON.parse(localStorage.getItem(HKEY)||'[]'); }catch(e){ return []; }
   }
   function saveHistory(list){
-    try { localStorage.setItem(HKEY, JSON.stringify(list)); } catch(e){}
+    try{ localStorage.setItem(HKEY,JSON.stringify(list)); }catch(e){}
   }
   function renderHistory(){
     var list = loadHistory();
-    if (list.length === 0){
-      historyList.innerHTML = '<div class="hist-empty">هنوز خوانشی ذخیره نشده است.</div>';
-      return;
-    }
+    if (!list.length){ historyList.innerHTML='<div class="hist-empty">هنوز خوانشی ذخیره نشده است.</div>'; return; }
     historyList.innerHTML = '';
     list.slice().reverse().forEach(function(item){
       var row = document.createElement('div');
       row.className = 'hist-item';
-      row.innerHTML =
-        '<div class="hval">' + toFa(item.hct.toFixed(1)) + '%</div>' +
-        '<div class="hmeta">' + item.date + (item.label ? ('<br>'+item.label) : '') + '</div>' +
-        '<button class="hdel" data-id="'+item.id+'">حذف</button>';
+      row.innerHTML = '<div class="hval">'+toFa(item.hct.toFixed(1))+'%</div><div class="hmeta">'+item.date+(item.label?'<br>'+item.label:'')+'</div><button class="hdel" data-id="'+item.id+'">حذف</button>';
       historyList.appendChild(row);
     });
     Array.prototype.slice.call(historyList.querySelectorAll('.hdel')).forEach(function(btn){
       btn.addEventListener('click', function(){
-        var id = btn.getAttribute('data-id');
-        var list = loadHistory().filter(function(it){ return String(it.id) !== String(id); });
-        saveHistory(list);
+        saveHistory(loadHistory().filter(function(it){ return String(it.id)!==btn.getAttribute('data-id'); }));
         renderHistory();
       });
     });
   }
-
   btnSave.addEventListener('click', function(){
-    if (lastHct === null) return;
-    var label = window.prompt('برچسب یا شماره نمونه (اختیاری):', '') || '';
+    if (lastHct===null) return;
+    var label = window.prompt('برچسب یا شماره نمونه (اختیاری):','')||'';
     var list = loadHistory();
-    list.push({ id: Date.now(), hct: lastHct, date: jalaliDateString(new Date()), label: label.trim() });
+    list.push({id:Date.now(), hct:lastHct, date:jalaliDateString(new Date()), label:label.trim()});
     saveHistory(list);
-    showToast('در تاریخچه ذخیره شد');
+    showToast('در تاریخچه ذخیره شد', 1500);
   });
+  btnHistory.addEventListener('click', function(){ renderHistory(); historyModal.classList.remove('hidden'); });
+  btnCloseHistory.addEventListener('click', function(){ historyModal.classList.add('hidden'); });
+  historyModal.addEventListener('click', function(e){ if(e.target===historyModal) historyModal.classList.add('hidden'); });
+  btnHelp.addEventListener('click', function(){ helpModal.classList.remove('hidden'); });
+  btnCloseHelp.addEventListener('click', function(){ helpModal.classList.add('hidden'); });
+  helpModal.addEventListener('click', function(e){ if(e.target===helpModal) helpModal.classList.add('hidden'); });
 
-  btnHistory.addEventListener('click', function(){
-    renderHistory();
-    historyModal.classList.remove('hidden');
-  });
-  btnCloseHistory.addEventListener('click', function(){
-    historyModal.classList.add('hidden');
-  });
-  historyModal.addEventListener('click', function(e){
-    if (e.target === historyModal) historyModal.classList.add('hidden');
-  });
+  window.addEventListener('resize', function(){ if(img){ fitCanvasToStage(); draw(); } });
 
-  btnHelp.addEventListener('click', function(){
-    helpModal.classList.remove('hidden');
-  });
-  btnCloseHelp.addEventListener('click', function(){
-    helpModal.classList.add('hidden');
-  });
-  helpModal.addEventListener('click', function(e){
-    if (e.target === helpModal) helpModal.classList.add('hidden');
-  });
-
-  window.addEventListener('resize', function(){
-    if (img){ fitCanvasToStage(); draw(); }
-  });
-
-  updateButtons();
-  updateSteps();
-  renderResult();
+  updateButtons(); updateZoomButtons(); updateSteps(); renderResult();
 })();
 </script>
 <footer style="flex:0 0 auto;text-align:center;padding:clamp(6px,1.5vw,10px) clamp(10px,2.5vw,16px);font-size:clamp(9px,1.6vw,11px);color:var(--ink-soft);border-top:1px solid var(--line);background:var(--panel);line-height:1.8;">
@@ -738,6 +1034,9 @@
   <a href="https://instagram.com/lab.sciences" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:none;font-weight:700;">@lab.sciences</a>
   <br>
   <span style="font-size:clamp(8px,1.4vw,10px);">برای نسخه‌های به‌روز، پیشنهادات و ارتباط از طریق اینستاگرام پیام دهید</span><br>
+  <span style="font-size:clamp(10px,1.8vw,12px);"><a href="#" id="downloadAppLink" style="color:var(--primary);text-decoration:none;font-weight:700;">⬇ دانلود اپ (فایل HTML)</a></span>
+  <span style="margin:0 4px;color:var(--line);">|</span>
+  <span style="font-size:clamp(9px,1.5vw,11px);color:var(--ink-soft);">iOS: Safari &rarr; Share &rarr; Add to Home Screen</span><br>
   <span style="font-size:clamp(7.5px,1.3vw,9px);color:#a08882;">&copy; 1404 دکتر امیر عصری &mdash; تمامی حقوق محفوظ است</span>
 </footer>
 </body>
